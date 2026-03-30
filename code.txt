@@ -1,0 +1,1 @@
+pyinstaller --onefile --name "ST_PowerTool" --add-data "_01_auto_concat.py;." --add-data "_02_profiling_tool.py;." --add-data "_03_target_vs_profiling.py;." --add-data "_04_HCP_vs_everything.py;." --add-data "Utils;Utils" "main.py"
