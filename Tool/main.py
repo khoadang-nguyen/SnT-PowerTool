@@ -70,7 +70,7 @@ while True:
         print("Mình đi relax, rửa mặt gì đó xong làm nhé 😏")
         continue
 
-    answer_2 = input("\nOk, vậy là tinh thần minh mẫn.\nBạn có đảm bảo data và folder yêu cầu theo file ReadMe đã chuẩn bị và format chuẩn chỉnh không? (yes/no) ").strip().lower()
+    answer_2 = input("\nOk, vậy là tinh thần minh mẫn.\nBạn có đảm bảo data và folder yêu cầu theo file ReadMe đã chuẩn bị và format chuẩn chỉnh chưa? (yes/no) ").strip().lower()
     if answer_2 not in accepted_yes:
         print('Vui lòng kiểm tra đầy đủ trước khi chạy để tránh lỗi.')
         continue
