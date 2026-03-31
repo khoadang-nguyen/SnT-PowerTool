@@ -53,6 +53,7 @@ def run():
             ("HCP Data",get_hcp_data),
             ("Target List", lambda: pd.read_excel(PATH / 'HCP_Data/Target_List.xlsx', sheet_name='TargetList')),
             ("Profiling Pivot", lambda: pd.read_excel(PATH / 'Export_Data/Profiling_Pivot.xlsx')),
+            ('LEO HA8', lambda: pd.read_excel(PATH / 'Export_Data/LEO_Survey_Export.xlsx')),
             ("OB BETTEX", lambda: pd.read_excel(PATH / 'Export_Data/OB_Survey_Export.xlsx', sheet_name='BETTEX')),
             ("OB TSC", lambda: pd.read_excel(PATH / 'Export_Data/OB_Survey_Export.xlsx', sheet_name='TSC')),
             ("OB WH", lambda: pd.read_excel(PATH / 'Export_Data/OB_Survey_Export.xlsx', sheet_name='WH'))
@@ -68,12 +69,14 @@ def run():
             except Exception as e:
                 tqdm.write(f"Lỗi khi load {name}: {e}")
         
+        
         df_hcp = dfs['HCP Data']
         df_target = dfs['Target List']
         df_profiling = dfs['Profiling Pivot']
         df_ob_bettex = dfs['OB BETTEX']
         df_ob_tsc = dfs['OB TSC']
         df_ob_wh = dfs['OB WH']
+        df_leo_ha8 = dfs['LEO HA8']
 
         print('Đã load xong các data cần thiết.')
         print('Tiến hành cleaning và checking data')
@@ -82,13 +85,15 @@ def run():
         OB_TSC_LIST = df_ob_tsc[(df_ob_tsc['HCP Contact Code'] != 'VN00000000') & (df_ob_tsc['check']==1)][['HCP Contact Code']]
         OB_WH_LIST = df_ob_wh[(df_ob_wh['HCP Contact Code'] != 'VN00000000') & (df_ob_wh['check']==1)][['HCP Contact Code']]
 
+        LEO_HA8_LIST = df_leo_ha8[(df_leo_ha8['HCP Contact Code'] != 'VN00000000') & (df_leo_ha8['check']==1)][['HCP Contact Code']]
+
         PROFI_LIST = df_profiling[(df_profiling['cont_code'] != 'VN00000000')][['cont_code']].drop_duplicates()
         TARGET_LIST = df_target[(df_target['cont_code'] != 'VN00000000')][['cont_code']].drop_duplicates()
 
         HCP_LIST = (df_hcp[(df_hcp['HCPCode'] != 'VN00000000') & (df_hcp['Status']!='Removed')]
                             )
 
-        for df in [OB_BT_LIST, OB_TSC_LIST, OB_WH_LIST]:
+        for df in [OB_BT_LIST, OB_TSC_LIST, OB_WH_LIST, LEO_HA8_LIST]:
             df.rename(columns = {'HCP Contact Code':'cont_code'}, inplace = True)
 
 
@@ -109,6 +114,9 @@ def run():
         OB_BT_LIST['OB_BETTEX'] = 1
         OB_TSC_LIST['OB_TSC'] = 1
         OB_WH_LIST['OB_WH'] = 1
+        
+        LEO_HA8_LIST['LEO_HA8'] = 1
+
         PROFI_LIST['PROFILING'] = 1
         TARGET_LIST['TARGET'] = 1
         TARGET_OB['TARGET_OB'] = 1
@@ -134,6 +142,8 @@ def run():
         HCP_LIST = pd.concat([HCP_LIST, new_rows], ignore_index=True)
         HCP_LIST.rename(columns = {'HCPCode':'cont_code'}, inplace = True)
 
+        HCP_LIST = HCP_LIST[~HCP_LIST['cont_code'].isna()]
+
         DFF = HCP_LIST.merge(TARGET_LIST, how = 'left', on = 'cont_code')
         DFF = DFF.merge(TARGET_OB, how = 'left', on = 'cont_code')
         DFF = DFF.merge(TARGET_HA1, how = 'left', on = 'cont_code')
@@ -144,21 +154,91 @@ def run():
         DFF = DFF.merge(OB_BT_LIST,  how = 'left', on = 'cont_code')
         DFF = DFF.merge(OB_TSC_LIST,  how = 'left', on = 'cont_code')
         DFF = DFF.merge(OB_WH_LIST,  how = 'left', on = 'cont_code')
+        DFF = DFF.merge(LEO_HA8_LIST,  how = 'left', on = 'cont_code')
 
-        DFF.iloc[:,[-1,-2,-3,-4,-5,-6,-7,-8,-9]] = DFF.iloc[:,[-1,-2,-3,-4,-5,-6,-7,-8,-9]].fillna(0)
+        DFF.iloc[:,-11:] = DFF.iloc[:,-11:].fillna(0)
 
-        DFF['Survey_Check'] = np.where((DFF['PROFILING'] == 1) & (DFF['OB_BETTEX'] + DFF['OB_TSC'] + DFF['OB_WH']) >=1, 1, 0)
+        DFF['OB_TOTAL'] = np.where((DFF['OB_BETTEX'] + DFF['OB_TSC'] + DFF['OB_WH']) >=1, 1, 0)
+        DFF['Survey_Check_OB'] = np.where((DFF['PROFILING'] == 1) & (DFF['OB_BETTEX'] + DFF['OB_TSC'] + DFF['OB_WH']) >=1, 1, 0)
+        DFF['Survey_Check_LEO_HA8'] = np.where((DFF['PROFILING'] == 1) & (DFF['LEO_HA8']) ==1, 1, 0)
+        
+        DFF = DFF.replace(
+            ["nan", "NaN", "None", "none", "NULL", "null", ""],  # string bẩn
+            np.nan
+        )
 
+        DFF = DFF.astype(object).where(DFF.notna(), None)
+
+        cols = DFF.columns[-14:]
+        DFF[cols] = DFF[cols].apply(pd.to_numeric, errors='coerce')
+        DFF.replace([np.inf, -np.inf], np.nan, inplace=True)
+
+        #just for sure...
+        DFF.iloc[:,-11:] = DFF.iloc[:,-11:].fillna(0)
+
+        print('Đã hoàn thiện xong bộ data set')
+        print('Tiến hành làm bộ data summary cho từng Line')
+
+        DF_SUMMARY = DFF[(~DFF['Speciality1'].isin(['ADMINISTRATION','BOARD OF DIRECTORS','DENTAL',
+                             'DIAGNOSTICS','FINANCE', 'IZI HOSPITAL','NURSE', 'PURCHASING','WAREHOUSE KEEPER'])) & DFF['Speciality1'].notna()]
+        
+        DF_SUMMARY_LEO = (DF_SUMMARY[['Speciality1','cont_code','TARGET','TARGET_HA8', 'PROFILING','LEO_HA8']]
+                            .groupby(['Speciality1'])
+                            .agg(Total_cont_code = ('cont_code','nunique'),
+                                Total_Target = ('TARGET', 'sum'),
+                                Total_TARGET_HA8 = ('TARGET_HA8', 'sum'),
+                                Total_PROFILING = ('PROFILING', 'sum'),
+                                Total_LEO_HA8 = ('LEO_HA8', 'sum'),
+                                )
+                    )
+        DF_SUMMARY_LEO['% S&T vs Target list'] = ((DF_SUMMARY_LEO["Total_LEO_HA8"].div(DF_SUMMARY_LEO["Total_TARGET_HA8"]).round(2)).fillna(0))
+
+        DF_SUMMARY_LEO['% S&T vs extended HCP list'] = np.where(DF_SUMMARY_LEO['% S&T vs Target list'] <1, 0 ,
+                                                        np.where((DF_SUMMARY_LEO['% S&T vs Target list'] >1), (DF_SUMMARY_LEO['% S&T vs Target list'] - 1).round(2), 1))
+
+        DF_SUMMARY_LEO['% S&T vs universe của specialty được chọn làm segment'] = ((DF_SUMMARY_LEO["Total_LEO_HA8"].div(DF_SUMMARY_LEO["Total_cont_code"]).round(2)).fillna(0))
+        DF_SUMMARY_LEO['% Profiling vs Target List'] = ((DF_SUMMARY_LEO["Total_PROFILING"].div(DF_SUMMARY_LEO["Total_TARGET_HA8"]).round(2)).fillna(0))
+
+        DF_SUMMARY_LEO = DF_SUMMARY_LEO.reset_index()
+        DF_SUMMARY_LEO.replace([np.inf, -np.inf], np.nan, inplace=True)
+        DF_SUMMARY_LEO = DF_SUMMARY_LEO.fillna(0)
+
+        DF_SUMMARY_OB = (DF_SUMMARY[['Speciality1','cont_code','TARGET','TARGET_OB', 'PROFILING', 'OB_BETTEX', 'OB_TSC', 'OB_WH', 'OB_TOTAL']]
+                            .groupby(['Speciality1'])
+                            .agg(Total_cont_code = ('cont_code','nunique'),
+                                Total_Target = ('TARGET', 'sum'),
+                                Total_Target_OB = ('TARGET_OB', 'sum'),
+                                Total_PROFILING = ('PROFILING', 'sum'),
+                                Total_OB_BETTEX = ('OB_BETTEX', 'sum'),
+                                Total_OB_TSC = ('OB_TSC', 'sum'),
+                                Total_OB_WH = ('OB_WH', 'sum'),
+                                Total_OB = ('OB_TOTAL', 'sum'),
+                                )
+                    )
+        DF_SUMMARY_OB['% S&T vs Target list'] = ((DF_SUMMARY_OB["Total_OB"].div(DF_SUMMARY_OB["Total_Target_OB"]).round(2)).fillna(0))
+
+        DF_SUMMARY_OB['% S&T vs extended HCP list'] = np.where(DF_SUMMARY_OB['% S&T vs Target list'] <1, 0 ,
+                                                        np.where((DF_SUMMARY_OB['% S&T vs Target list'] >1), (DF_SUMMARY_OB['% S&T vs Target list'] - 1).round(2), 1))
+
+        DF_SUMMARY_OB['% S&T vs universe của specialty được chọn làm segment'] = ((DF_SUMMARY_OB["Total_OB"].div(DF_SUMMARY_OB["Total_cont_code"]).round(2)).fillna(0))
+        DF_SUMMARY_OB['% Profiling vs Target List'] = ((DF_SUMMARY_OB["Total_PROFILING"].div(DF_SUMMARY_OB["Total_Target_OB"]).round(2)).fillna(0))
+
+        DF_SUMMARY_OB = DF_SUMMARY_OB.reset_index()
+        DF_SUMMARY_OB.replace([np.inf, -np.inf], np.nan, inplace=True)
+        DF_SUMMARY_OB = DF_SUMMARY_OB.fillna(0)
 
         print('Đã hoàn thiện xong bộ data, tiến hành export dữ liệu vào Folder Export')
 
 
         # ---------- COLUMN WIDTHS ----------
 
-        COLUMN_WIDTHS = {1: 20, 2: 25, 4: 25, 5: 30, 6: 30, 8: 30} 
+        COLUMN_WIDTHS = {1: 20, 2: 25, 4: 25, 5: 30, 6: 30, 8: 30, 21:30, 22: 30}
         DEFAULT_WIDTH = 20
 
-        GRAY_COLUMNS = { i for i in range(8,19)}
+        GRAY_COLUMNS = { i for i in range(9,19)}
+        GRAY_COLUMNS_OB = {i for i in range(10,19)}
+        GRAY_COLUMNS_LEO = {i for i  in range(6,19)}
+
 
         # ---------- STYLE ----------
         BLUE_FILL = PatternFill("solid", fgColor="5B9BD5")
@@ -200,6 +280,55 @@ def run():
             ws.row_dimensions[1].height = 70  # header cao
             ws.freeze_panes = "A2"
             ws.auto_filter.ref = ws.dimensions
+
+
+            #----------- OB Summary ------------
+            DF_SUMMARY_OB.to_excel(writer, index=False, sheet_name="Summary OB")
+            ws = writer.sheets["Summary OB"]
+
+            # ---------- HEADER STYLE + COLUMN WIDTH ----------
+            for col_idx in range(1, ws.max_column + 1):
+                cell = ws.cell(row=1, column=col_idx)
+
+                # style header
+                is_gray = col_idx in GRAY_COLUMNS_OB
+                cell.fill = GRAY_FILL if is_gray else BLUE_FILL
+                cell.font = FONT_BLACK if is_gray else FONT_WHITE
+                cell.alignment = ALIGNMENT
+                cell.border = BORDER
+
+                # set column width: dùng COLUMN_WIDTHS nếu có, còn không dùng DEFAULT_WIDTH
+                ws.column_dimensions[cell.column_letter].width = COLUMN_WIDTHS.get(col_idx, DEFAULT_WIDTH)
+
+            # ---------- SHEET SETUP ----------
+            ws.row_dimensions[1].height = 70  # header cao
+            ws.freeze_panes = "A2"
+            ws.auto_filter.ref = ws.dimensions
+
+
+            #----------- LEO Summary ------------
+            DF_SUMMARY_LEO.to_excel(writer, index=False, sheet_name="Summary LEO HA8")
+            ws = writer.sheets["Summary LEO HA8"]
+
+            # ---------- HEADER STYLE + COLUMN WIDTH ----------
+            for col_idx in range(1, ws.max_column + 1):
+                cell = ws.cell(row=1, column=col_idx)
+
+                # style header
+                is_gray = col_idx in GRAY_COLUMNS_LEO
+                cell.fill = GRAY_FILL if is_gray else BLUE_FILL
+                cell.font = FONT_BLACK if is_gray else FONT_WHITE
+                cell.alignment = ALIGNMENT
+                cell.border = BORDER
+
+                # set column width: dùng COLUMN_WIDTHS nếu có, còn không dùng DEFAULT_WIDTH
+                ws.column_dimensions[cell.column_letter].width = COLUMN_WIDTHS.get(col_idx, DEFAULT_WIDTH)
+
+            # ---------- SHEET SETUP ----------
+            ws.row_dimensions[1].height = 70  # header cao
+            ws.freeze_panes = "A2"
+            ws.auto_filter.ref = ws.dimensions
+
 
         print("✅ Export xong data checking list survey, target so với HCP list")
         print("Tool đã chạy xong. Hãy kiểm tra lại kết quả.")
