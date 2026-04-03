@@ -57,6 +57,7 @@ def run():
             
 
         df = pd.concat(dfs, ignore_index=True)
+        df = df.drop_duplicates()
         print("Tiến hành clean và pivot data")
 
         df['sub_ques_name'] = (
