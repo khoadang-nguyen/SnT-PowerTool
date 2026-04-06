@@ -75,8 +75,10 @@ def run():
 
         for col in LEO_DF.select_dtypes(include='object'):
             LEO_DF[col] = LEO_DF[col].str.strip()
-        LEO_DF.replace(['nan', 'None'], None, inplace=True)
+        LEO_DF.replace(['nan', 'None','null'], None, inplace=True)
 
+
+        LEO_DF = LEO_DF[~LEO_DF['Rep Code'].isna()].drop_duplicates()
         #rating and check valid
         LEO_DF['Potential'] = np.where(LEO_DF.iloc[:, 26].isna(),0,1)
         LEO_DF['Brand1'] = np.where((LEO_DF.iloc[:, 28].notna()) | (LEO_DF.iloc[:, 29].notna()) | (LEO_DF.iloc[:, 30].notna()) | (LEO_DF.iloc[:, 31].notna()), 1, 0)
