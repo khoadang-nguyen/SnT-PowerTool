@@ -1,2 +1,5 @@
-**/build/
-**/dist/
+**/.tmp*/
+.env
+**/logs*/
+**/__pycache__/
+**/datas/**/*

@@ -2,6 +2,7 @@ import pandas as pd
 import numpy as np
 from pathlib import Path
 import os
+from datetime import datetime
 from openpyxl.styles import PatternFill, Font, Alignment, Border, Side
 from tqdm import tqdm
 
@@ -67,21 +68,36 @@ def run():
         np.where(df['sub_ques_name'] == '1. Trong 6 tháng vừa qua, BS đã được tiếp cận hoặc nhận thông tin từ công ty qua những hình thức/ kênh nào?', df['sub_ques_name'].astype(str) + ' - ' + df['criteria_name'].astype(str), df['sub_ques_name'])
         #  )))
         )
+        if 'Bline' not in df.columns:
+            df['Bline'] = 'No_Bline'
+            print("Đã tạo cột Bline.")
+        else:
+            print("Cột Bline đã tồn tại, bỏ qua bước tạo mới.")
+
+        df['txn_timestamp'] = pd.to_datetime(df['txn_timestamp'])
+        
         for col in df.select_dtypes(include='object'):
                 df[col] = df[col].str.strip()
         df.replace(['nan', 'None'], None, inplace=True)
 
         df['txn_timestamp'] = df.groupby([
             'Bline','salesrep_code','salesrep_name',
-            'txn_date','cust_code','cust_name','cont_code','cont_name',
+            'cust_code','cust_name','cont_code','cont_name',
             'title_code','title_name'
-            ])['txn_timestamp'].transform('max')
-
+            ], dropna=False)['txn_timestamp'].transform('max')
+        
+        df = df.groupby([
+            'Bline','salesrep_code','salesrep_name',
+            'cust_code','cust_name','cont_code','cont_name',
+            'title_code','title_name'
+            ]).first().reset_index()
         df['expec'] = df.groupby([
             'Bline','salesrep_code','salesrep_name',
-            'txn_date','cust_code','cust_name','cont_code','cont_name',
+            'cust_code','cust_name','cont_code','cont_name',
             'title_code','title_name'
         ])['expec'].transform(lambda x: x.dropna().iloc[-1] if x.dropna().any() else pd.NA)
+
+        df['txn_date'] = df['txn_timestamp'].dt.date
 
         df = df.sort_values('txn_timestamp').drop_duplicates(df[['Bline','salesrep_code','salesrep_name',
                                                     'txn_date','cust_code','cust_name','cont_code','cont_name',
